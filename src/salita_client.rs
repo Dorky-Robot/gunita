@@ -1,0 +1,132 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub endpoint: Option<String>,
+    pub port: i64,
+    pub is_self: bool,
+    pub status: String,
+    pub last_seen: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileInfo {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: Option<String>,
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub directories: Vec<String>,
+}
+
+#[derive(Clone)]
+pub struct SalitaClient {
+    client: reqwest::Client,
+    base_url: String,
+}
+
+impl SalitaClient {
+    pub fn new(base_url: &str) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            base_url: base_url.trim_end_matches('/').to_string(),
+        }
+    }
+
+    fn peer_url(endpoint: &str, port: i64) -> String {
+        format!("http://{}:{}", endpoint, port)
+    }
+
+    /// Get the base URL for a device — local salita for self, peer endpoint for remote
+    pub fn device_url(&self, device: &DeviceInfo) -> String {
+        if device.is_self {
+            self.base_url.clone()
+        } else if let Some(ref ep) = device.endpoint {
+            Self::peer_url(ep, device.port)
+        } else {
+            self.base_url.clone()
+        }
+    }
+
+    pub async fn list_devices(&self) -> Result<Vec<DeviceInfo>, reqwest::Error> {
+        self.client
+            .get(format!("{}/api/v1/devices", self.base_url))
+            .send()
+            .await?
+            .json()
+            .await
+    }
+
+    pub async fn get_node(&self, base: &str) -> Result<NodeInfo, reqwest::Error> {
+        self.client
+            .get(format!("{}/api/v1/node", base))
+            .send()
+            .await?
+            .json()
+            .await
+    }
+
+    pub async fn list_files(
+        &self,
+        base: &str,
+        dir: &str,
+        path: &str,
+    ) -> Result<Vec<FileEntry>, reqwest::Error> {
+        self.client
+            .get(format!("{}/api/v1/files", base))
+            .query(&[("dir", dir), ("path", path)])
+            .send()
+            .await?
+            .json()
+            .await
+    }
+
+    pub async fn fetch_file_bytes(
+        &self,
+        base: &str,
+        dir: &str,
+        path: &str,
+    ) -> Result<bytes::Bytes, reqwest::Error> {
+        self.client
+            .get(format!("{}/api/v1/files/read", base))
+            .query(&[("dir", dir), ("path", path)])
+            .send()
+            .await?
+            .bytes()
+            .await
+    }
+
+    pub async fn file_info(
+        &self,
+        base: &str,
+        dir: &str,
+        path: &str,
+    ) -> Result<FileInfo, reqwest::Error> {
+        self.client
+            .get(format!("{}/api/v1/files/info", base))
+            .query(&[("dir", dir), ("path", path)])
+            .send()
+            .await?
+            .json()
+            .await
+    }
+}

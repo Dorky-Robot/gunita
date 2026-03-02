@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gunita</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <nav id="sidebar">
+      <div class="sidebar-header">
+        <h1>Gunita</h1>
+        <button id="sidebar-close" class="icon-btn" aria-label="Close sidebar">&times;</button>
+      </div>
+      <div id="device-list"></div>
+    </nav>
+
+    <main id="main">
+      <header id="toolbar">
+        <button id="sidebar-toggle" class="icon-btn" aria-label="Open sidebar">&#9776;</button>
+        <div id="breadcrumb"></div>
+        <button id="sort-toggle">Newest first</button>
+      </header>
+      <div id="grid"></div>
+      <div id="sentinel"></div>
+      <div id="scrubber"></div>
+    </main>
+  </div>
+
+  <div id="lightbox" class="hidden">
+    <button id="lb-close" class="lb-btn lb-close">&times;</button>
+    <button id="lb-prev" class="lb-btn lb-prev">&#8249;</button>
+    <button id="lb-next" class="lb-btn lb-next">&#8250;</button>
+    <div id="lb-content"></div>
+    <div id="lb-info"></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
