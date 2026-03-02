@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use axum::extract::{Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
-use crate::salita_client::{DeviceInfo, FileEntry};
+use crate::salita_client::{CatalogEntry, DeviceInfo, FileEntry};
 use crate::state::AppState;
 
 #[derive(Serialize)]
@@ -19,6 +21,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/devices", get(list_devices))
         .route("/api/browse", get(browse_files))
         .route("/api/browse/months", get(browse_months))
+        .route("/api/catalog", get(catalog))
+        .route("/api/index/stats", get(index_stats))
 }
 
 async fn list_devices(State(state): State<AppState>) -> Result<Json<Vec<DeviceWithDirs>>, AppError> {
@@ -104,6 +108,10 @@ struct BrowseEntry {
     size: u64,
     modified: Option<String>,
     file_type: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cid: Option<String>,
+    /// true when thumbnail is ready (fully processed)
+    processed: bool,
 }
 
 #[derive(Serialize)]
@@ -162,23 +170,43 @@ async fn browse_files(
     let files = fetch_sorted_files(&state, &params.device, &params.dir, &params.path, &params.sort).await?;
 
     let total = files.len();
-    let entries: Vec<BrowseEntry> = files
+    let page: Vec<FileEntry> = files
         .into_iter()
         .skip(params.offset)
         .take(params.limit)
+        .collect();
+
+    // Look up already-indexed CIDs + EXIF dates (fast, non-blocking DB lookup)
+    // and kick off background indexing for files that aren't indexed yet
+    let catalog_map = lookup_and_queue_indexing(&state, &params.dir, &page).await;
+
+    let entries: Vec<BrowseEntry> = page
+        .into_iter()
         .map(|f| {
             let file_type = if f.is_dir {
                 "dir"
             } else {
                 classify_file(&f.name)
             };
+            let catalog_info = catalog_map.get(&f.path);
+            let cid = catalog_info.and_then(|ci| ci.cid.clone());
+            let processed = f.is_dir
+                || file_type == "other"
+                || file_type == "video"
+                || catalog_info.map_or(false, |ci| ci.has_thumbnail && ci.has_preview);
+            // Prefer EXIF date from catalog over filesystem mtime
+            let modified = catalog_info
+                .and_then(|ci| ci.modified.clone())
+                .or(f.modified);
             BrowseEntry {
                 name: f.name,
                 path: f.path,
                 is_dir: f.is_dir,
                 size: f.size,
-                modified: f.modified,
+                modified,
                 file_type,
+                cid,
+                processed,
             }
         })
         .collect();
@@ -191,6 +219,75 @@ async fn browse_files(
         offset: params.offset,
         has_more,
     }))
+}
+
+struct CatalogInfo {
+    cid: Option<String>,       // Only set when thumbnail is ready (fast path)
+    modified: Option<String>,  // EXIF date, always set if indexed
+    has_thumbnail: bool,
+    has_preview: bool,
+}
+
+/// Fast: look up already-indexed CIDs + EXIF dates from salita's catalog.
+/// Then fire-and-forget background indexing for un-indexed files so next load is fast.
+async fn lookup_and_queue_indexing(
+    state: &AppState,
+    dir: &str,
+    page: &[FileEntry],
+) -> HashMap<String, CatalogInfo> {
+    let image_paths: Vec<String> = page
+        .iter()
+        .filter(|f| !f.is_dir)
+        .filter(|f| {
+            let ft = classify_file(&f.name);
+            ft == "image" || ft == "raw"
+        })
+        .map(|f| f.path.clone())
+        .collect();
+
+    if image_paths.is_empty() {
+        return HashMap::new();
+    }
+
+    // Use in-memory cached catalog (refreshes every 60s, instant on repeat loads)
+    let catalog_entries = state.cached_catalog(dir).await;
+    let catalog_map: HashMap<String, CatalogInfo> = catalog_entries
+        .into_iter()
+        .map(|e| {
+            (
+                e.path,
+                CatalogInfo {
+                    cid: if e.has_thumbnail { Some(e.cid) } else { None },
+                    modified: e.modified,
+                    has_thumbnail: e.has_thumbnail,
+                    has_preview: e.has_preview,
+                },
+            )
+        })
+        .collect();
+
+    // Find paths that need thumbnail generation (unindexed or indexed without thumbnail)
+    let needs_thumbnail: Vec<String> = image_paths
+        .into_iter()
+        .filter(|p| {
+            catalog_map.get(p).map_or(true, |ci| ci.cid.is_none())
+        })
+        .collect();
+
+    // Fire-and-forget: ask salita to index the missing files in the background
+    if !needs_thumbnail.is_empty() {
+        let state2 = state.clone();
+        let dir = dir.to_string();
+        tokio::spawn(async move {
+            let salita = state2.salita();
+            let base = salita.base_url();
+            let _ = salita.index_files(&base, &dir, &needs_thumbnail).await;
+            // Invalidate cache so next load picks up newly indexed files
+            state2.invalidate_catalog_cache(&dir).await;
+        });
+    }
+
+    catalog_map
 }
 
 #[derive(Deserialize)]
@@ -271,4 +368,55 @@ async fn browse_months(
     }
 
     Ok(Json(groups))
+}
+
+// --- Catalog (CID-based) ---
+
+#[derive(Deserialize)]
+struct CatalogParams {
+    dir: Option<String>,
+    file_type: Option<String>,
+    offset: Option<i64>,
+    limit: Option<i64>,
+}
+
+async fn catalog(
+    State(state): State<AppState>,
+    Query(params): Query<CatalogParams>,
+) -> Result<Json<Vec<CatalogEntry>>, AppError> {
+    let salita = state.salita();
+    let base = &salita.base_url();
+    let entries = salita
+        .fetch_catalog(
+            base,
+            params.dir.as_deref(),
+            params.file_type.as_deref(),
+            params.offset,
+            params.limit,
+        )
+        .await
+        .map_err(|e| AppError::Internal(format!("catalog fetch error: {e}")))?;
+
+    Ok(Json(entries))
+}
+
+async fn index_stats(
+    State(state): State<AppState>,
+) -> Result<axum::response::Response, AppError> {
+    let salita = state.salita();
+    let base = salita.base_url();
+    let resp = salita
+        .client()
+        .get(format!("{}/api/v1/catalog/stats", base))
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("stats fetch error: {e}")))?;
+
+    let body = resp.bytes().await
+        .map_err(|e| AppError::Internal(format!("stats read error: {e}")))?;
+
+    Ok(axum::response::Response::builder()
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(body))
+        .unwrap())
 }

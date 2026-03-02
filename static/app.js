@@ -275,11 +275,18 @@
         selectDir(currentDevice, currentDir, entry.path);
     } else if (entry.file_type === "video") {
       div.innerHTML = '<div class="placeholder"></div><div class="video-badge">&#9654;</div>';
-      div.onclick = () => openLightbox(entry);
+      div.onclick = (e) => openLightbox(entry, e.target);
     } else if (entry.file_type === "raw" || entry.file_type === "image") {
       const img = document.createElement("img");
       img.loading = "lazy";
-      img.src = `/api/thumbnail?device=${enc(currentDevice)}&dir=${enc(currentDir)}&path=${enc(entry.path)}&w=300&h=300`;
+      if (entry.cid) {
+        img.src = `/api/thumbnail/cid?cid=${enc(entry.cid)}&w=300&h=300`;
+      } else {
+        img.src = `/api/thumbnail?device=${enc(currentDevice)}&dir=${enc(currentDir)}&path=${enc(entry.path)}&w=300&h=300`;
+      }
+      if (!entry.processed) {
+        div.classList.add("processing");
+      }
       img.alt = entry.name;
       img.onerror = () => {
         img.replaceWith(
@@ -290,7 +297,7 @@
         );
       };
       div.appendChild(img);
-      div.onclick = () => openLightbox(entry);
+      div.onclick = (e) => openLightbox(entry, e.target);
     } else {
       div.innerHTML = `<div class="placeholder">${escHtml(entry.name)}</div>`;
     }
@@ -315,15 +322,15 @@
   observer.observe(sentinel);
 
   // --- Lightbox ---
-  function openLightbox(entry) {
+  function openLightbox(entry, clickedEl) {
     lbIndex = mediaEntries.findIndex(
       (e) => e.path === entry.path && e.name === entry.name
     );
-    showLightboxEntry(entry);
+    showLightboxEntry(entry, clickedEl);
     lightbox.classList.remove("hidden");
   }
 
-  function showLightboxEntry(entry) {
+  function showLightboxEntry(entry, sourceEl) {
     lbContent.innerHTML = "";
     lbInfo.textContent = entry.name;
 
@@ -334,10 +341,37 @@
       video.src = `/api/stream?device=${enc(currentDevice)}&dir=${enc(currentDir)}&path=${enc(entry.path)}`;
       lbContent.appendChild(video);
     } else {
+      // Progressive loading: blurry thumbnail stretched -> preview -> full res
       const img = document.createElement("img");
-      img.src = `/api/preview?device=${enc(currentDevice)}&dir=${enc(currentDir)}&path=${enc(entry.path)}`;
       img.alt = entry.name;
       lbContent.appendChild(img);
+
+      // Step 1: Grab the grid thumbnail src (already in browser cache — instant)
+      const gridImg = sourceEl
+        ? sourceEl.closest(".grid-item")?.querySelector("img")
+        : null;
+      const thumbSrc = gridImg?.src
+        || (entry.cid
+          ? `/api/thumbnail/cid?cid=${enc(entry.cid)}&w=300&h=300`
+          : `/api/thumbnail?device=${enc(currentDevice)}&dir=${enc(currentDir)}&path=${enc(entry.path)}&w=300&h=300`);
+      img.src = thumbSrc;
+
+      // Step 2: Load preview, crossfade when ready
+      const previewSrc = entry.cid
+        ? `/api/preview/cid?cid=${enc(entry.cid)}`
+        : `/api/preview?device=${enc(currentDevice)}&dir=${enc(currentDir)}&path=${enc(entry.path)}`;
+      const preview = new Image();
+      preview.onload = () => {
+        if (lbContent.contains(img)) img.src = preview.src;
+      };
+      preview.src = previewSrc;
+
+      // Step 3: Load full res in background
+      const full = new Image();
+      full.onload = () => {
+        if (lbContent.contains(img)) img.src = full.src;
+      };
+      full.src = `/api/stream?device=${enc(currentDevice)}&dir=${enc(currentDir)}&path=${enc(entry.path)}`;
     }
   }
 
@@ -350,7 +384,7 @@
   function lbNav(delta) {
     if (mediaEntries.length === 0) return;
     lbIndex = (lbIndex + delta + mediaEntries.length) % mediaEntries.length;
-    showLightboxEntry(mediaEntries[lbIndex]);
+    showLightboxEntry(mediaEntries[lbIndex], null);
   }
 
   $("#lb-close").onclick = closeLightbox;

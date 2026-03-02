@@ -121,7 +121,7 @@ async fn get_memory(
         .map_err(|_| AppError::NotFound(format!("Memory not found: {id}")))?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, memory_id, kind, device_id, dir, path, file_type, caption, taken_at, sort_order, created_at
+        "SELECT id, memory_id, kind, device_id, dir, path, file_type, caption, taken_at, sort_order, created_at, cid
          FROM memory_items WHERE memory_id = ?1 ORDER BY sort_order, created_at",
     )?;
 
@@ -139,6 +139,7 @@ async fn get_memory(
                 taken_at: row.get(8)?,
                 sort_order: row.get(9)?,
                 created_at: row.get(10)?,
+                cid: row.get(11)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -282,8 +283,8 @@ async fn add_item(
     let id = uuid::Uuid::now_v7().to_string();
 
     conn.execute(
-        "INSERT INTO memory_items (id, memory_id, kind, device_id, dir, path, file_type, caption, taken_at, sort_order)
-         VALUES (?1, ?2, 'media', ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO memory_items (id, memory_id, kind, device_id, dir, path, file_type, caption, taken_at, sort_order, cid)
+         VALUES (?1, ?2, 'media', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             id,
             memory_id,
@@ -294,11 +295,12 @@ async fn add_item(
             body.caption,
             body.taken_at,
             body.sort_order,
+            body.cid,
         ],
     )?;
 
     let item = conn.query_row(
-        "SELECT id, memory_id, kind, device_id, dir, path, file_type, caption, taken_at, sort_order, created_at
+        "SELECT id, memory_id, kind, device_id, dir, path, file_type, caption, taken_at, sort_order, created_at, cid
          FROM memory_items WHERE id = ?1",
         params![id],
         |row| {
@@ -314,6 +316,7 @@ async fn add_item(
                 taken_at: row.get(8)?,
                 sort_order: row.get(9)?,
                 created_at: row.get(10)?,
+                cid: row.get(11)?,
             })
         },
     )?;
@@ -359,7 +362,7 @@ async fn playback(
     }
 
     let mut stmt = conn.prepare(
-        "SELECT id, memory_id, kind, device_id, dir, path, file_type, caption, taken_at, sort_order, created_at
+        "SELECT id, memory_id, kind, device_id, dir, path, file_type, caption, taken_at, sort_order, created_at, cid
          FROM memory_items WHERE memory_id = ?1 ORDER BY sort_order, created_at",
     )?;
 
@@ -377,6 +380,7 @@ async fn playback(
                 taken_at: row.get(8)?,
                 sort_order: row.get(9)?,
                 created_at: row.get(10)?,
+                cid: row.get(11)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

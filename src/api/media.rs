@@ -14,7 +14,9 @@ use crate::state::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/thumbnail", get(thumbnail))
+        .route("/api/thumbnail/cid", get(thumbnail_by_cid))
         .route("/api/preview", get(preview))
+        .route("/api/preview/cid", get(preview_by_cid))
         .route("/api/stream", get(stream))
 }
 
@@ -107,6 +109,76 @@ async fn thumbnail(
     tokio::fs::write(&cache_path, &jpeg_bytes).await?;
 
     Ok(jpeg_response(jpeg_bytes))
+}
+
+// --- CID-based thumbnail (fetches pre-generated thumbnail from salita) ---
+
+#[derive(Deserialize)]
+struct CidThumbnailParams {
+    cid: String,
+    #[serde(default = "default_thumb_size")]
+    w: u32,
+    #[serde(default = "default_thumb_size")]
+    h: u32,
+}
+
+async fn thumbnail_by_cid(
+    State(state): State<AppState>,
+    Query(params): Query<CidThumbnailParams>,
+) -> Result<Response, AppError> {
+    // Check local cache first
+    let cache_path = cache::cid_cache_path(&state, &params.cid, params.w, params.h);
+    if cache_path.exists() {
+        let bytes = tokio::fs::read(&cache_path).await?;
+        return Ok(jpeg_response(bytes));
+    }
+
+    // Fetch from salita's pre-generated thumbnail
+    let salita = state.salita();
+    let base = salita.base_url();
+    let bytes = salita
+        .fetch_thumbnail_by_cid(&base, &params.cid, params.w, params.h)
+        .await
+        .map_err(|e| AppError::Internal(format!("thumbnail fetch error: {e}")))?;
+
+    // Cache locally
+    cache::ensure_cid_cache_dir(&state, &params.cid).await?;
+    tokio::fs::write(&cache_path, &bytes).await?;
+
+    Ok(jpeg_response(bytes.to_vec()))
+}
+
+// --- CID-based preview (1600px mid-res, cached locally) ---
+
+#[derive(Deserialize)]
+struct CidPreviewParams {
+    cid: String,
+}
+
+async fn preview_by_cid(
+    State(state): State<AppState>,
+    Query(params): Query<CidPreviewParams>,
+) -> Result<Response, AppError> {
+    // Check local cache
+    let cache_path = cache::cid_cache_path(&state, &params.cid, 1600, 1600);
+    if cache_path.exists() {
+        let bytes = tokio::fs::read(&cache_path).await?;
+        return Ok(jpeg_response(bytes));
+    }
+
+    // Fetch from salita (generates on-demand if not cached there either)
+    let salita = state.salita();
+    let base = salita.base_url();
+    let bytes = salita
+        .fetch_preview_by_cid(&base, &params.cid)
+        .await
+        .map_err(|e| AppError::Internal(format!("preview fetch error: {e}")))?;
+
+    // Cache locally
+    cache::ensure_cid_cache_dir(&state, &params.cid).await?;
+    tokio::fs::write(&cache_path, &bytes).await?;
+
+    Ok(jpeg_response(bytes.to_vec()))
 }
 
 async fn preview(

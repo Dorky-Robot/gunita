@@ -52,6 +52,14 @@ impl SalitaClient {
         }
     }
 
+    pub fn base_url(&self) -> String {
+        self.base_url.clone()
+    }
+
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
     fn peer_url(endpoint: &str, port: i64) -> String {
         format!("http://{}:{}", endpoint, port)
     }
@@ -129,4 +137,120 @@ impl SalitaClient {
             .json()
             .await
     }
+
+    /// Fetch the content catalog from salita, with optional filters.
+    pub async fn fetch_catalog(
+        &self,
+        base: &str,
+        dir: Option<&str>,
+        file_type: Option<&str>,
+        offset: Option<i64>,
+        limit: Option<i64>,
+    ) -> Result<Vec<CatalogEntry>, reqwest::Error> {
+        let mut query: Vec<(&str, String)> = Vec::new();
+        if let Some(d) = dir {
+            query.push(("dir", d.to_string()));
+        }
+        if let Some(ft) = file_type {
+            query.push(("file_type", ft.to_string()));
+        }
+        if let Some(o) = offset {
+            query.push(("offset", o.to_string()));
+        }
+        if let Some(l) = limit {
+            query.push(("limit", l.to_string()));
+        }
+
+        self.client
+            .get(format!("{}/api/v1/catalog", base))
+            .query(&query)
+            .send()
+            .await?
+            .json()
+            .await
+    }
+
+    /// Fetch a pre-generated thumbnail by CID from salita.
+    pub async fn fetch_thumbnail_by_cid(
+        &self,
+        base: &str,
+        cid: &str,
+        w: u32,
+        h: u32,
+    ) -> Result<bytes::Bytes, reqwest::Error> {
+        self.client
+            .get(format!("{}/api/v1/content/{}/thumbnail", base, cid))
+            .query(&[("w", w.to_string()), ("h", h.to_string())])
+            .send()
+            .await?
+            .bytes()
+            .await
+    }
+
+    /// Fetch a mid-res preview by CID from salita (1600px JPEG, ~150-250KB).
+    pub async fn fetch_preview_by_cid(
+        &self,
+        base: &str,
+        cid: &str,
+    ) -> Result<bytes::Bytes, reqwest::Error> {
+        self.client
+            .get(format!("{}/api/v1/content/{}/preview", base, cid))
+            .send()
+            .await?
+            .bytes()
+            .await
+    }
+
+    /// Ask salita to index specific files on demand, returning CIDs.
+    /// Used to prioritize thumbnail generation for the page the user is viewing.
+    pub async fn index_files(
+        &self,
+        base: &str,
+        dir: &str,
+        paths: &[String],
+    ) -> Result<Vec<IndexResult>, reqwest::Error> {
+        self.client
+            .post(format!("{}/api/v1/index", base))
+            .json(&serde_json::json!({ "dir": dir, "paths": paths }))
+            .send()
+            .await?
+            .json()
+            .await
+    }
+
+    /// Fetch file content by CID from salita.
+    pub async fn fetch_content_by_cid(
+        &self,
+        base: &str,
+        cid: &str,
+    ) -> Result<bytes::Bytes, reqwest::Error> {
+        self.client
+            .get(format!("{}/api/v1/content/{}", base, cid))
+            .send()
+            .await?
+            .bytes()
+            .await
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexResult {
+    pub path: String,
+    pub cid: Option<String>,
+    pub has_thumbnail: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatalogEntry {
+    pub cid: String,
+    pub dir: String,
+    pub path: String,
+    pub filename: String,
+    pub size: i64,
+    pub mime: Option<String>,
+    pub file_type: String,
+    pub modified: Option<String>,
+    pub has_thumbnail: bool,
+    #[serde(default)]
+    pub has_preview: bool,
 }

@@ -5,7 +5,10 @@ use std::path::Path;
 
 pub type DbPool = Pool<SqliteConnectionManager>;
 
-pub const MIGRATIONS: &[(&str, &str)] = &[("001_init", include_str!("../migrations/001_init.sql"))];
+pub const MIGRATIONS: &[(&str, &str)] = &[
+    ("001_init", include_str!("../migrations/001_init.sql")),
+    ("002_add_cid", include_str!("../migrations/002_add_cid.sql")),
+];
 
 pub fn create_pool(db_path: &Path) -> anyhow::Result<DbPool> {
     if let Some(parent) = db_path.parent() {

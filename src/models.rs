@@ -26,6 +26,8 @@ pub struct MemoryItem {
     pub taken_at: Option<String>,
     pub sort_order: i32,
     pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cid: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +80,7 @@ pub struct AddMemoryItem {
     pub taken_at: Option<String>,
     #[serde(default)]
     pub sort_order: i32,
+    pub cid: Option<String>,
 }
 
 fn default_file_type() -> String {
