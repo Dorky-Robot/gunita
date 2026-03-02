@@ -111,4 +111,4 @@ Recommendation: specific fix
 
 Severity: **CRITICAL** (crash/data corruption), **HIGH** (visual defect or resource leak), **MEDIUM** (edge case), **LOW** (minor), **INFO** (observation)
 
-End with verdict: **APPROVE**, **APPROVE WITH NOTES**, or **REQUEST CHANGES**.
+End with exactly one verdict line: **VERDICT: APPROVE**, **VERDICT: APPROVE_WITH_NOTES**, or **VERDICT: REQUEST_CHANGES**.

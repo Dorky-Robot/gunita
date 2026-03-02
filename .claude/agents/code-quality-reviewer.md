@@ -10,7 +10,7 @@ You are a code quality reviewer for **gunita**, a Rust/Axum media server with a 
 ## Rust Conventions
 
 ### Error Handling
-- gunita uses `thiserror` for `AppError` variants and `anyhow` for internal errors. New error cases should follow the existing pattern in `error.rs`.
+- gunita uses `thiserror` for `AppError` variants with `String`-based variants for internal errors. New error cases should follow the existing pattern in `error.rs`.
 - All API handlers return `Result<impl IntoResponse, AppError>`. Don't use `.unwrap()` in handlers.
 - Use `?` operator for error propagation. Avoid manual `match` on `Result` when `?` suffices.
 - Log errors with `tracing::error!` before converting to HTTP responses.
@@ -104,4 +104,4 @@ Recommendation: specific fix
 
 Severity: **HIGH** (bug or anti-pattern), **MEDIUM** (convention violation), **LOW** (style nit), **INFO** (suggestion)
 
-End with verdict: **APPROVE**, **APPROVE WITH NOTES**, or **REQUEST CHANGES**.
+End with exactly one verdict line: **VERDICT: APPROVE**, **VERDICT: APPROVE_WITH_NOTES**, or **VERDICT: REQUEST_CHANGES**.

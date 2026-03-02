@@ -94,4 +94,4 @@ Recommendation: specific fix
 
 Severity: **CRITICAL** (data loss, crash), **HIGH** (reproducible edge case), **MEDIUM** (race condition under load), **LOW** (theoretical), **INFO** (observation)
 
-End with verdict: **APPROVE**, **APPROVE WITH NOTES**, or **REQUEST CHANGES**.
+End with exactly one verdict line: **VERDICT: APPROVE**, **VERDICT: APPROVE_WITH_NOTES**, or **VERDICT: REQUEST_CHANGES**.

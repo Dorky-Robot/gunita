@@ -83,4 +83,4 @@ Recommendation: specific fix
 
 Severity levels: **CRITICAL**, **HIGH**, **MEDIUM**, **LOW**, **INFO**
 
-End with a summary table and verdict: **APPROVE**, **APPROVE WITH NOTES**, or **REQUEST CHANGES**.
+End with a summary table and exactly one verdict line: **VERDICT: APPROVE**, **VERDICT: APPROVE_WITH_NOTES**, or **VERDICT: REQUEST_CHANGES**.

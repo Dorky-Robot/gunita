@@ -61,7 +61,7 @@ fi
 # ── 4. Lint (BLOCKING) ───────────────────────────────────────────────────────
 step "[4/4] Lint (cargo clippy)"
 if command -v cargo >/dev/null 2>&1; then
-    if ! cargo clippy --all-targets -- -D warnings 2>&1; then
+    if ! cargo clippy --all-targets -- -D warnings; then
         fail "Clippy warnings found — commit blocked. Fix warnings before committing."
     fi
     echo "      OK  No clippy warnings"
